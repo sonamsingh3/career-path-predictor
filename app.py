@@ -36,41 +36,10 @@ st.sidebar.image("logo.png", width=120)
 st.sidebar.title("About")
 st.sidebar.info("This AI model predicts the best career path based on your resume skills.")
 
-# ---------------- Load Model Files ----------------
-model = pickle.load(open("career_model.pkl", "rb"))
-vectorizer = pickle.load(open("vectorizer.pkl", "rb"))
-career_encoder = pickle.load(open("career_encoder.pkl", "rb"))
-
-# ---------------- File Upload Section ----------------
-uploaded_file = st.file_uploader("📄 Upload Your Resume (PDF Only)", type=["pdf"])
-
-if uploaded_file is not None:
-    pdf_reader = PyPDF2.PdfReader(uploaded_file)
-    text = ""
-    for page in pdf_reader.pages:
-        if page.extract_text():
-            text += page.extract_text()
-
-    st.success("Resume Uploaded Successfully!")
-
-    if st.button("🔍 Predict Career"):
-        vector_input = vectorizer.transform([text])
-        prediction = model.predict(vector_input)
-        career = career_encoder.inverse_transform(prediction)
-
-        st.markdown("## 🎯 Predicted Career Path")
-        st.success(career[0])
-
-        st.balloons()
-
-else:
-    st.warning("Please upload your resume first.")
-
 # ---------------- Footer ----------------
 st.markdown("---")
 st.markdown("<center>Made with ❤️ by Sonam Singh</center>", unsafe_allow_html=True)
 
-st.set_page_config(page_title="AI Career Intelligence System", layout="wide")
 st.markdown("""
     <style>
     .stApp {
@@ -229,6 +198,7 @@ if menu == "🏠 Resume Analysis":
 
             resume_text = ""
 
+            # -------- Extract Text --------
             if uploaded_file.type == "application/pdf":
                 reader = PyPDF2.PdfReader(uploaded_file)
                 for page in reader.pages:
@@ -238,6 +208,7 @@ if menu == "🏠 Resume Analysis":
             else:
                 resume_text = uploaded_file.read().decode("utf-8")
 
+            # -------- Prediction --------
             input_vector = vectorizer.transform([resume_text])
             probabilities = model.predict_proba(input_vector)[0]
             top_indices = np.argsort(probabilities)[-3:][::-1]
@@ -253,21 +224,23 @@ if menu == "🏠 Resume Analysis":
                 confidence_scores.append(confidence)
                 cols[i].metric(name, f"{confidence:.2f}%")
 
+            # -------- Graph --------
             fig, ax = plt.subplots()
             ax.bar(career_names, confidence_scores)
             ax.set_title("Confidence Comparison")
             st.pyplot(fig)
 
+            # -------- Skill Extraction --------
             detected = extract_skills(resume_text)
 
             resume_score = min(
-                len(detected) * 10 + int(max(confidence_scores)//2),
+                len(detected) * 10 + int(max(confidence_scores) // 2),
                 100
             )
 
             top_career = career_names[0]
 
-            # Ranking Logic
+            # -------- Ranking --------
             if resume_score >= 85:
                 rank = "🥇 Gold"
             elif resume_score >= 70:
@@ -282,6 +255,28 @@ if menu == "🏠 Resume Analysis":
 
             required = career_info.get(top_career, {}).get("skills", [])
             missing = [s for s in required if s not in detected]
+
+            # -------- Generate PDF --------
+            from io import BytesIO
+            graph_buffer = BytesIO()
+            fig.savefig(graph_buffer, format="png")
+
+            pdf_file = generate_pdf(
+                career_names,
+                confidence_scores,
+                detected,
+                missing,
+                top_career,
+                resume_score,
+                graph_buffer
+            )
+
+            st.download_button(
+                label="📥 Download Career Report",
+                data=pdf_file,
+                file_name=f"{uploaded_file.name}_career_report.pdf",
+                mime="application/pdf"
+            )
 
             save_data(
                 top_career,
@@ -298,7 +293,7 @@ if menu == "🏠 Resume Analysis":
                 "Rank": rank
             })
 
-        # ===== Batch Ranking Table =====
+        # -------- Batch Ranking --------
         st.divider()
         st.header("🏆 Batch Ranking Summary")
 
